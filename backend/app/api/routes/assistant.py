@@ -17,8 +17,6 @@ from app.schemas.assistant import ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
-GROQ_MODEL = "llama3-8b-8192"
-
 
 async def _get_shelf_or_404(session: AsyncSession, shelf_id: int) -> Shelf:
     """Fetch a shelf or raise 404 if not found."""
@@ -108,7 +106,7 @@ async def chat(
     client = AsyncGroq(api_key=settings.groq_api_key)
     try:
         completion = await client.chat.completions.create(
-            model=GROQ_MODEL,
+            model=settings.groq_model_name,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": payload.message},
@@ -116,6 +114,21 @@ async def chat(
             temperature=0.4,
         )
     except APIStatusError as exc:
+        # 401 = wrong/revoked key; do not leak full upstream body to clients.
+        if exc.status_code == 401:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "Invalid or unauthorized Groq API key. "
+                    "Create a key at https://console.groq.com/keys and set GROQ_API_KEY in backend/.env "
+                    "(valid keys start with gsk_). Keys for other providers (e.g. xAI/Grok) will not work."
+                ),
+            ) from exc
+        if exc.status_code == 429:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Groq rate limit exceeded. Try again in a moment.",
+            ) from exc
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Groq API error: {exc}",

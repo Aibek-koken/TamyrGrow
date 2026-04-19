@@ -14,6 +14,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://postgres:postgres@localhost:5432/hydroponics"
     )
     groq_api_key: str = ""
+    groq_model_name: str = "llama-3.3-70b-versatile"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/network/api_service.dart';
@@ -68,6 +69,44 @@ class AssistantProvider extends ChangeNotifier {
           ),
         );
       }
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      final detail = _fastApiDetail(e.response?.data);
+      if (code == 503) {
+        _error = detail ??
+            'GROQ_API_KEY не задан на сервере. Добавьте ключ в backend/.env и перезапустите API.';
+        _messages.add(
+          ChatMessage(
+            text:
+                'Ассистент недоступен: на бэкенде не настроен ключ Groq (GROQ_API_KEY). '
+                'Укажите ключ в файле backend/.env в корне проекта и перезапустите сервер '
+                '(при Docker: docker compose up -d --build после сохранения .env).',
+            isUser: false,
+            timestamp: DateTime.now(),
+          ),
+        );
+      } else if (code == 401) {
+        _error = detail;
+        _messages.add(
+          ChatMessage(
+            text: detail ??
+                'Неверный ключ Groq. Создайте ключ на https://console.groq.com/keys '
+                '(строка начинается с gsk_), вставьте в backend/.env как GROQ_API_KEY=… '
+                'и перезапустите uvicorn. Ключи xAI/Grok здесь не подходят.',
+            isUser: false,
+            timestamp: DateTime.now(),
+          ),
+        );
+      } else {
+        _error = detail ?? e.message ?? e.toString();
+        _messages.add(
+          ChatMessage(
+            text: _friendlyHttpError(code, detail),
+            isUser: false,
+            timestamp: DateTime.now(),
+          ),
+        );
+      }
     } catch (e) {
       _error = e.toString();
       _messages.add(
@@ -82,4 +121,27 @@ class AssistantProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+}
+
+String? _fastApiDetail(Object? data) {
+  if (data is Map<String, dynamic>) {
+    final d = data['detail'];
+    if (d is String) return d;
+    if (d is List && d.isNotEmpty && d.first is Map) {
+      final msg = (d.first as Map)['msg'];
+      if (msg is String) return msg;
+    }
+  }
+  return null;
+}
+
+String _friendlyHttpError(int? code, String? detail) {
+  if (detail != null && detail.isNotEmpty) return detail;
+  if (code == 502) {
+    return 'Сервис Groq вернул ошибку. Проверьте ключ на console.groq.com и лимиты API.';
+  }
+  if (code == 429) {
+    return 'Слишком много запросов к Groq. Подождите немного и попробуйте снова.';
+  }
+  return 'Не удалось связаться с ассистентом. Проверьте сеть и адрес API.';
 }

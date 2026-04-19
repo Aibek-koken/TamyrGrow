@@ -23,6 +23,9 @@ services:
     container_name: hydroponics-api
     ports:
       - "8000:8000"
+    # Loads GROQ_API_KEY (and other secrets) from backend/.env. DATABASE_URL below overrides DB host for Docker network.
+    env_file:
+      - ./backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/hydroponics
     depends_on:
