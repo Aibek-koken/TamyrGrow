@@ -68,5 +68,20 @@ class ApiService {
     );
     return DeviceState.fromJson(response.data ?? <String, dynamic>{});
   }
+
+  /// POST /assistant/chat — AI agronomist reply for a shelf.
+  Future<String> chatWithAi(int shelfId, String message) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/assistant/chat',
+      data: <String, dynamic>{
+        'shelf_id': shelfId,
+        'message': message,
+      },
+    );
+    final data = response.data ?? <String, dynamic>{};
+    final reply = data['reply'];
+    if (reply is String) return reply;
+    return '';
+  }
 }
 

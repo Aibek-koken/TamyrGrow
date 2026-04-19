@@ -5,4 +5,5 @@ greenlet
 asyncpg
 pydantic
 pydantic-settings
+groq
 

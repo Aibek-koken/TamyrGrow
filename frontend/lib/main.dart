@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/network/api_service.dart';
+import 'features/assistant/state/assistant_provider.dart';
 import 'features/control/state/control_provider.dart';
 import 'features/dashboard/state/dashboard_provider.dart';
 
@@ -25,6 +26,11 @@ void main() {
             api: context.read<ApiService>(),
             shelfId: 1,
           )..load(),
+        ),
+        ChangeNotifierProvider<AssistantProvider>(
+          create: (context) => AssistantProvider(
+            api: context.read<ApiService>(),
+          ),
         ),
       ],
       child: const SmartHydroponicsApp(),

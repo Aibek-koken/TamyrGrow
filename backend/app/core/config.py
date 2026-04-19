@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+asyncpg://postgres:postgres@localhost:5432/hydroponics"
     )
+    groq_api_key: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

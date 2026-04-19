@@ -9,12 +9,16 @@ class ShelfStatusCard extends StatelessWidget {
     required this.status,
     required this.temperature,
     required this.humidity,
+    this.onTap,
+    this.selected = false,
   });
 
   final String shelfName;
   final ShelfStatus status;
   final double? temperature;
   final double? humidity;
+  final VoidCallback? onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -23,8 +27,15 @@ class ShelfStatusCard extends StatelessWidget {
 
     return Card(
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: selected ? theme.colorScheme.primary : Colors.white.withValues(alpha: 0.08),
+          width: selected ? 1.5 : 1,
+        ),
+      ),
       child: InkWell(
-        onTap: () {},
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(

@@ -28,6 +28,21 @@ class _ControlScreenState extends State<ControlScreen> with SingleTickerProvider
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final dash = context.read<DashboardProvider>();
+    final sid = dash.selectedShelfId;
+    if (sid == null) return;
+    final control = context.read<ControlProvider>();
+    if (sid != control.shelfId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        context.read<ControlProvider>().selectShelf(sid);
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _fanController.dispose();
     super.dispose();
@@ -47,7 +62,8 @@ class _ControlScreenState extends State<ControlScreen> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ControlProvider>();
-    final shelves = context.watch<DashboardProvider>().summary?.shelves ?? const <Shelf>[];
+    final dashboard = context.watch<DashboardProvider>();
+    final shelves = dashboard.summary?.shelves ?? const <Shelf>[];
     final device = provider.deviceState;
 
     final isAiMode = provider.isAiMode;
@@ -75,7 +91,10 @@ class _ControlScreenState extends State<ControlScreen> with SingleTickerProvider
               shelves: shelves,
               selectedId: provider.shelfId,
               busy: provider.isLoading,
-              onSelect: (id) => provider.selectShelf(id),
+              onSelect: (id) {
+                dashboard.selectShelf(id);
+                provider.selectShelf(id);
+              },
             ),
             const SizedBox(height: 14),
           ],
