@@ -1,65 +1,87 @@
-# Smart Hydroponics Management API
+# Tamyr — Smart Hydroponics (monorepo)
 
-FastAPI backend boilerplate for a smart hydroponics "Digital Twin" system.
-It bridges ESP32 sensor input with a Flutter mobile app.
+Монорепозиторий **цифрового двойника** гидропоники: FastAPI-бэкенд и Flutter-клиент.
 
-## Tech Stack
-
-- FastAPI
-- PostgreSQL
-- SQLAlchemy Async ORM (`asyncpg`)
-- Pydantic v2
-
-## Project Structure
+## Структура
 
 ```text
-app/
-  api/
-    routes/
-  core/
-  db/
-  models/
-  schemas/
-  main.py
-seed.py
-docker-compose.yml
-requirements.txt
+Tamyr/
+  backend/          # FastAPI, SQLAlchemy async, seed, Python venv
+  frontend/         # Flutter-приложение
+  docker-compose.yml
+  README.md
 ```
 
-## Quick Start
+## Технологии
 
-1. Start PostgreSQL:
+- **Backend:** FastAPI, PostgreSQL 16, SQLAlchemy 2 async (`asyncpg`), Pydantic v2
+- **Frontend:** Flutter
+- **Инфраструктура:** Docker Compose (PostgreSQL + образ API из `./backend`)
+
+## Быстрый старт — база и API в Docker
+
+Из корня репозитория:
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-2. Install dependencies:
+- PostgreSQL: `localhost:5432`
+- API: `http://localhost:8000`
+
+Переменная `DATABASE_URL` для сервиса `api` задаётся в `docker-compose.yml` (подключение к контейнеру `postgres`).
+
+## Локальная разработка — только PostgreSQL в Docker
 
 ```bash
+docker compose up -d postgres
+```
+
+## Локальная разработка — API на хосте
+
+1. Запустите PostgreSQL (команда выше).
+
+2. Создайте виртуальное окружение и зависимости:
+
+```bash
+cd backend
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. (Optional) create `.env` from `.env.example`.
+3. Скопируйте `backend/.env.example` в `backend/.env` при необходимости и поправьте `DATABASE_URL` (по умолчанию `localhost:5432`).
 
-4. Seed mock data:
+4. Заполните тестовыми данными:
 
 ```bash
+cd backend
 python seed.py
 ```
 
-5. Run API:
+5. Запуск API:
 
 ```bash
+cd backend
 uvicorn app.main:app --reload
 ```
 
-## API Endpoints
+## Flutter (frontend)
+
+```bash
+cd frontend
+flutter pub get
+flutter run
+```
+
+Базовый URL API в клиенте по умолчанию: `http://localhost:8000` (см. `frontend/lib/core/network/api_service.dart`).
+
+## Основные HTTP-эндпоинты
 
 - `GET /dashboard/summary`
 - `GET /shelves/{id}/current`
+- `GET /shelves/{id}/logs`
 - `PATCH /shelves/{id}/control`
 - `POST /sensors/report`
 
+Подробнее см. `backend/PROJECT_SPEC.md`.
