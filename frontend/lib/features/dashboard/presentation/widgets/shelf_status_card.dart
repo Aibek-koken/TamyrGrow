@@ -9,6 +9,8 @@ class ShelfStatusCard extends StatelessWidget {
     required this.status,
     required this.temperature,
     required this.humidity,
+    required this.co2,
+    required this.tvoc,
     this.onTap,
     this.selected = false,
   });
@@ -17,6 +19,8 @@ class ShelfStatusCard extends StatelessWidget {
   final ShelfStatus status;
   final double? temperature;
   final double? humidity;
+  final int? co2;
+  final int? tvoc;
   final VoidCallback? onTap;
   final bool selected;
 
@@ -30,14 +34,16 @@ class ShelfStatusCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: selected ? theme.colorScheme.primary : Colors.white.withValues(alpha: 0.08),
+          color: selected
+              ? theme.colorScheme.primary
+              : Colors.white.withValues(alpha: 0.08),
           width: selected ? 1.5 : 1,
         ),
       ),
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -59,26 +65,32 @@ class ShelfStatusCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 8),
               _MetricRow(
                 icon: Icons.device_thermostat_rounded,
                 label: 'Temp',
-                value: temperature == null ? '—' : '${temperature!.toStringAsFixed(1)}°C',
+                value: temperature == null
+                    ? '—'
+                    : '${temperature!.toStringAsFixed(1)}°C',
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               _MetricRow(
                 icon: Icons.water_drop_rounded,
                 label: 'RH',
-                value: humidity == null ? '—' : '${humidity!.toStringAsFixed(0)}%',
+                value:
+                    humidity == null ? '—' : '${humidity!.toStringAsFixed(0)}%',
               ),
-              const Spacer(),
-              Divider(height: 1, color: theme.dividerColor),
-              const SizedBox(height: 10),
-              Text(
-                'Traffic Light',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.72),
-                ),
+              const SizedBox(height: 6),
+              _MetricRow(
+                icon: Icons.air_rounded,
+                label: 'CO₂',
+                value: co2 == null ? '—' : '${co2} ppm',
+              ),
+              const SizedBox(height: 6),
+              _MetricRow(
+                icon: Icons.blur_on_rounded,
+                label: 'TVOC',
+                value: tvoc == null ? '—' : '${tvoc} ppb',
               ),
             ],
           ),
@@ -169,4 +181,3 @@ class _MetricRow extends StatelessWidget {
       return (Icons.error_rounded, const Color(0xFFFF5252), 'CRIT');
   }
 }
-

@@ -60,6 +60,8 @@ class DashboardScreen extends StatelessWidget {
                   status: shelf.status,
                   temperature: sensor?.temperature,
                   humidity: sensor?.humidity,
+                  co2: sensor?.co2,
+                  tvoc: sensor?.tvoc,
                   selected: provider.selectedShelfId == shelf.id,
                   onTap: () => provider.selectShelf(shelf.id),
                 );
@@ -152,4 +154,3 @@ class _ErrorState extends StatelessWidget {
     );
   }
 }
-
