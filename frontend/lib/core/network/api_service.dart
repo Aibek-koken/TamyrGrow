@@ -10,7 +10,7 @@ class ApiService {
       : _dio = dio ??
             Dio(
               BaseOptions(
-                baseUrl: baseUrl ?? 'http://192.168.1.110:8000',
+                baseUrl: baseUrl ?? 'http://10.0.2.2:8000',
                 connectTimeout: const Duration(seconds: 10),
                 receiveTimeout: const Duration(seconds: 15),
               ),
@@ -42,7 +42,8 @@ class ApiService {
   }
 
   Future<ShelfCurrent> getShelfCurrent(int shelfId) async {
-    final response = await _dio.get<Map<String, dynamic>>('/shelves/$shelfId/current');
+    final response =
+        await _dio.get<Map<String, dynamic>>('/shelves/$shelfId/current');
     return ShelfCurrent.fromJson(response.data ?? <String, dynamic>{});
   }
 
@@ -75,7 +76,8 @@ class ApiService {
     final payload = <String, dynamic>{};
     if (lightBrightness != null) payload['light_brightness'] = lightBrightness;
     if (fanSpeed != null) payload['fan_speed'] = fanSpeed;
-    if (targetTemperature != null) payload['target_temperature'] = targetTemperature;
+    if (targetTemperature != null)
+      payload['target_temperature'] = targetTemperature;
     if (heaterOn != null) payload['heater_on'] = heaterOn;
     if (humidifierOn != null) payload['humidifier_on'] = humidifierOn;
     if (isAiMode != null) payload['is_ai_mode'] = isAiMode;
@@ -102,4 +104,3 @@ class ApiService {
     return '';
   }
 }
-
