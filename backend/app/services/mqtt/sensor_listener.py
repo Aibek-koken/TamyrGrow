@@ -117,6 +117,7 @@ async def _process_sensor_message(payload: str) -> None:
     }
     """
     data = json.loads(payload)
+    print(f"[MQTT] Got message: {payload}", flush=True)
     
     device_id = data.get("deviceId")
     if not device_id:
