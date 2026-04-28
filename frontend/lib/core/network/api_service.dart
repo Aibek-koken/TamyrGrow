@@ -18,6 +18,24 @@ class ApiService {
 
   final Dio _dio;
 
+  String get baseUrl => _dio.options.baseUrl;
+
+  Uri buildWsUri(String path) {
+    final httpUri = Uri.parse(baseUrl);
+    final wsScheme = httpUri.scheme == 'https' ? 'wss' : 'ws';
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    final basePath = httpUri.path.endsWith('/')
+        ? httpUri.path.substring(0, httpUri.path.length - 1)
+        : httpUri.path;
+
+    return httpUri.replace(
+      scheme: wsScheme,
+      path: '$basePath$normalizedPath',
+      query: '',
+      fragment: '',
+    );
+  }
+
   Future<DashboardSummary> getDashboardSummary() async {
     final response = await _dio.get<Map<String, dynamic>>('/dashboard/summary');
     return DashboardSummary.fromJson(response.data ?? <String, dynamic>{});

@@ -14,7 +14,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres -d hydroponics"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   api:
     build:
@@ -28,6 +28,12 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/hydroponics
+      MQTT_HOST: "193fbce2f2fb461db5e5fea6c8257502.s1.eu.hivemq.cloud"
+      MQTT_PORT: "8883"
+      MQTT_USERNAME: ""
+      MQTT_PASSWORD: ""
+      MQTT_TOPIC: "tamyr/sensors"
+      MQTT_ENABLED: "true"
     depends_on:
       postgres:
         condition: service_healthy

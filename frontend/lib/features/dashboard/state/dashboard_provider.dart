@@ -4,6 +4,7 @@ import '../../../core/network/api_service.dart';
 import '../models/dashboard_summary.dart';
 import '../models/shelf.dart';
 import '../models/shelf_current.dart';
+import '../models/sensor_log.dart';
 
 class DashboardProvider extends ChangeNotifier {
   DashboardProvider({required ApiService api}) : _api = api;
@@ -37,6 +38,18 @@ class DashboardProvider extends ChangeNotifier {
   void selectShelf(int shelfId) {
     if (_selectedShelfId == shelfId) return;
     _selectedShelfId = shelfId;
+    notifyListeners();
+  }
+
+  void applyLiveSensorLog(SensorLog log) {
+    final current = _currentByShelfId[log.shelfId];
+    if (current == null) return;
+    _currentByShelfId[log.shelfId] = ShelfCurrent(
+      shelf: current.shelf,
+      latestSensor: log,
+      deviceState: current.deviceState,
+      vpd: current.vpd,
+    );
     notifyListeners();
   }
 

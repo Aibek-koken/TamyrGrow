@@ -6,4 +6,5 @@ asyncpg
 pydantic
 pydantic-settings
 groq
+aiomqtt
 

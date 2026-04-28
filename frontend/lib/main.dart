@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/network/api_service.dart';
+import 'features/analytics/state/live_analytics_provider.dart';
 import 'features/assistant/state/assistant_provider.dart';
 import 'features/control/state/control_provider.dart';
 import 'features/dashboard/state/dashboard_provider.dart';
@@ -20,6 +21,12 @@ void main() {
           create: (context) => DashboardProvider(
             api: context.read<ApiService>(),
           )..load(),
+        ),
+        ChangeNotifierProvider<LiveAnalyticsProvider>(
+          create: (context) => LiveAnalyticsProvider(
+            api: context.read<ApiService>(),
+            dashboard: context.read<DashboardProvider>(),
+          )..start(),
         ),
         ChangeNotifierProvider<ControlProvider>(
           create: (context) => ControlProvider(

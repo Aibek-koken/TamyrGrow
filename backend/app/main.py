@@ -10,6 +10,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.db.session import engine
 from app.models import Base
+from app.services.mqtt.sensor_listener import start_mqtt_listener, stop_mqtt_listener
 
 settings = get_settings()
 
@@ -28,7 +29,20 @@ async def lifespan(_: FastAPI):
                 """
             )
         )
-    yield
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE shelves
+                ADD COLUMN IF NOT EXISTS device_id VARCHAR(100) NOT NULL UNIQUE DEFAULT 'unknown'
+                """
+            )
+        )
+
+    mqtt_handle = await start_mqtt_listener()
+    try:
+        yield
+    finally:
+        await stop_mqtt_listener(mqtt_handle)
 
 
 app = FastAPI(

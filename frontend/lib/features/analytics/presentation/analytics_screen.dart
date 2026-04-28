@@ -5,10 +5,10 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 
-import '../../../core/network/api_service.dart';
 import '../../dashboard/models/sensor_log.dart';
 import '../../dashboard/models/shelf.dart';
 import '../../dashboard/models/shelf_current.dart';
+import '../state/live_analytics_provider.dart';
 import '../../dashboard/state/dashboard_provider.dart';
 
 class AnalyticsScreen extends StatefulWidget {
@@ -20,12 +20,10 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   int? _selectedShelfId;
-  late Future<_AnalyticsData> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
   }
 
   @override
@@ -34,81 +32,64 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final shelves = context.watch<DashboardProvider>().summary?.shelves ?? const <Shelf>[];
     if (_selectedShelfId == null && shelves.isNotEmpty) {
       _selectedShelfId = shelves.first.id;
-      _future = _load();
+      context.read<LiveAnalyticsProvider>().selectShelf(_selectedShelfId!);
     }
-  }
-
-  Future<_AnalyticsData> _load() async {
-    final api = context.read<ApiService>();
-    final shelfId = _selectedShelfId ?? 1;
-    final results = await Future.wait([
-      api.getShelfCurrent(shelfId),
-      api.getShelfSensorLogs(shelfId, limit: 240),
-    ]);
-    return _AnalyticsData(
-      current: results[0] as ShelfCurrent,
-      logs: results[1] as List<SensorLog>,
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DashboardProvider>();
     final shelves = provider.summary?.shelves ?? const <Shelf>[];
+    final live = context.watch<LiveAnalyticsProvider>();
+    final data = live.current == null
+        ? null
+        : _AnalyticsData(current: live.current!, logs: live.logs);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('AI Analytics'),
         actions: [
           IconButton(
-            onPressed: () => setState(() => _future = _load()),
+            onPressed: live.isLoading ? null : () => context.read<LiveAnalyticsProvider>().start(),
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
       ),
-      body: FutureBuilder<_AnalyticsData>(
-        future: _future,
-        builder: (context, snapshot) {
-          final isLoading = snapshot.connectionState == ConnectionState.waiting;
-          final data = snapshot.data;
-
-          return CustomScrollView(
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate(
-                    [
-                      _ShelfSelector(
-                        shelves: shelves,
-                        value: _selectedShelfId,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedShelfId = value;
-                            _future = _load();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      if (snapshot.hasError)
-                        _ErrorCard(
-                          message: snapshot.error.toString(),
-                          onRetry: () => setState(() => _future = _load()),
-                        )
-                      else if (isLoading && data == null)
-                        const _LoadingCard()
-                      else if (data == null)
-                        const _EmptyCard()
-                      else
-                        _AnalyticsBody(data: data),
-                    ],
+      body: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate(
+                [
+                  _ShelfSelector(
+                    shelves: shelves,
+                    value: _selectedShelfId,
+                    onChanged: (value) async {
+                      setState(() => _selectedShelfId = value);
+                      if (value != null) {
+                        await context.read<LiveAnalyticsProvider>().selectShelf(value);
+                      }
+                    },
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  if (live.error != null)
+                    _ErrorCard(
+                      message: live.error.toString(),
+                      onRetry: () => context.read<LiveAnalyticsProvider>().start(),
+                    )
+                  else if (live.isLoading && data == null)
+                    const _LoadingCard()
+                  else if (data == null)
+                    const _EmptyCard()
+                  else
+                    _AnalyticsBody(data: data),
+                ],
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }

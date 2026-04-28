@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     )
     groq_api_key: str = ""
     groq_model_name: str = "llama-3.3-70b-versatile"
+    mqtt_host: str = "193fbce2f2fb461db5e5fea6c8257502.s1.eu.hivemq.cloud"
+    mqtt_port: int = 8883
+    mqtt_username: str = "esp32user"
+    mqtt_password: str = "Esp32air"
+    mqtt_topic: str = "sensors/air_quality"
+    mqtt_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

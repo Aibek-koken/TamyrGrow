@@ -156,7 +156,9 @@ async def seed_shelves(
         shelves: list[Shelf] = []
         for index, name in enumerate(shelf_names):
             shelf_status = statuses_cycle[index % len(statuses_cycle)]
-            shelf = Shelf(name=name, status=shelf_status)
+            device_room_number = len(shelf_names) - index
+            device_id = f"ESP32-ROOM-{device_room_number:02d}"
+            shelf = Shelf(name=name, status=shelf_status, device_id=device_id)
             session.add(shelf)
             shelves.append(shelf)
 
