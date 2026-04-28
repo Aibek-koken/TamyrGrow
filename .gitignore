@@ -49,3 +49,9 @@ app.*.map.json
 frontend/android/app/debug
 frontend/android/app/profile
 frontend/android/app/release
+
+
+# Secrets and Environment Variables
+.env
+backend/.env
+frontend/.env
