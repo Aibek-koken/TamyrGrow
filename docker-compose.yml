@@ -30,9 +30,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/hydroponics
       MQTT_HOST: "193fbce2f2fb461db5e5fea6c8257502.s1.eu.hivemq.cloud"
       MQTT_PORT: "8883"
-      MQTT_USERNAME: ""
-      MQTT_PASSWORD: ""
-      MQTT_TOPIC: "tamyr/sensors"
+      MQTT_USERNAME: "esp32user"
+      MQTT_PASSWORD: "Esp32air"
+      MQTT_TOPIC: "sensors/air_quality"
       MQTT_ENABLED: "true"
     depends_on:
       postgres:
