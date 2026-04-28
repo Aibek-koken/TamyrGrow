@@ -7,4 +7,3 @@ __pycache__
 !.env.example
 .git
 PROJECT_SPEC.md
-seed.py

@@ -1,6 +1,6 @@
 # Техническая спецификация: Tamyr Backend (Smart Hydroponics API)
 
-Этот документ — **единая спецификация** бэкенда проекта Tamyr (Smart Hydroponics Digital Twin): что именно реализовано в репозитории, какие контракты поддерживаются, какие инварианты соблюдаются, и как всё это запускать/разворачивать.
+Этот документ — **полная и актуальная спецификация** бэкенда проекта Tamyr (Smart Hydroponics Digital Twin). Описывает реализованную функциональность, контракты API, модель данных и правила бизнес-логики.
 
 ---
 
@@ -8,38 +8,49 @@
 
 ### 1.1. Назначение
 
-**Tamyr Backend** — HTTP JSON API для «цифрового двойника» гидропонной установки.
+**Tamyr Backend** — многоуровневый HTTP API + real-time WebSocket + MQTT-слушатель для управления «цифровым двойником» гидропонной установки.
 
-- **Собирает телеметрию** (температура, влажность, CO₂, TVOC) по полкам (`shelves`).
-- **Хранит состояние исполнительных устройств** (свет/вентилятор/уставки, режим AI).
-- **Выдаёт агрегированные срезы** для дашборда и детальных экранов.
-- **Предоставляет AI-чат** (контекстный агроном) с привязкой к полке и её текущим данным.
+- **Инgest**: собирает телеметрию (°C, %, CO₂, TVOC) от ESP32 устройств через MQTT в реальном времени
+- **Storage**: хранит измерения (`SensorLog`), состояние управления (`DeviceState`) и метаданные полок (`Shelf`) в PostgreSQL
+- **API**: выдаёт краткие срезы (dashboard) и полные данные (аналитика) по HTTP
+- **Real-time**: транслирует новые измерения подписчикам через WebSocket (`/ws/shelves/{id}/sensors`)
+- **Интеллект**: AI ассистент-агроном контекстно отвечает на вопросы, учитывая текущую телеметрию полки
 
-### 1.2. В зоне ответственности
+### 1.2. В зоне ответственности (реализовано)
 
-- **Контракты API**: эндпоинты, схемы запросов/ответов, коды ошибок.
-- **Модель данных** в PostgreSQL и работа через ORM.
-- **Расчёт производных величин** (например, VPD на сервере).
-- **Валидация входных данных** (Pydantic) и доменные ограничения (например, запрет ручного управления в AI-режиме).
+- ✅ **HTTP API контракты** (8 рабочих эндпоинтов, коды ошибок 4xx/5xx)
+- ✅ **MQTT слушатель** с auto-reconnect (экспоненциальный backoff, логирование)
+- ✅ **WebSocket realtime** для транляции датчиков (`/ws/shelves/{id}/sensors`)
+- ✅ **Модель данных**: Shelf, DeviceState, SensorLog с привязками и каскадным удалением
+- ✅ **AI режим**: доменное правило — запрет ручного управления при `is_ai_mode=true` (409 Conflict)
+- ✅ **Расчёты**: VPD (vapor pressure deficit) на основе T/H
+- ✅ **Валидация**: Pydantic + SQLAlchemy constraints
 
-### 1.3. Вне зоны ответственности (на текущем этапе)
+### 1.3. Вне зоны ответственности (не реализовано)
 
-- **Аутентификация/авторизация** (в коде нет).
-- **Push/real-time доставка** (WebSocket/MQTT не реализованы).
-- **Полноценные миграции** (Alembic не подключён; используется `create_all` при старте).
-- **Стабильное versioning API** (`/api/v1` не используется).
+- ❌ **Аутентификация/авторизация** (нет API токенов, RBAC)
+- ❌ **Миграции БД** (используется `create_all` + одноразовые `ALTER TABLE`; Alembic не подключён)
+- ❌ **Версионирование API** (нет `/api/v1/`, пути прямые)
+- ❌ **Rate limiting, quota** (не ограничиваются запросы)
+- ❌ **Caching** (нет Redis, каждый запрос — свежие данные из БД)
 
 ---
 
 ## 2. Технологический стек
 
-- **FastAPI**: HTTP слой, DI, OpenAPI.
-- **Uvicorn**: ASGI сервер.
-- **SQLAlchemy 2.x (async)** + **asyncpg**: доступ к PostgreSQL.
-- **Pydantic v2** + **pydantic-settings**: схемы и настройки из окружения.
-- **PostgreSQL 16**: основная БД.
-- **Groq SDK**: провайдер LLM для AI ассистента.
-- **Docker Compose**: локальная инфраструктура (Postgres, при необходимости весь стек).
+| Компонент | Назначение | Версия/Замечание |
+|-----------|-----------|------------------|
+| **FastAPI** | HTTP API, DI, OpenAPI docs | (requirements.txt) |
+| **Uvicorn** | ASGI сервер | standard extras |
+| **SQLAlchemy 2.x (async)** | ORM с async поддержкой | 2.0+ |
+| **asyncpg** | async PostgreSQL драйвер | native для asyncio |
+| **aiomqtt** | MQTT клиент с async/await | для sensor listener |
+| **Pydantic v2** | валидация/сериализация (DTO) | |
+| **pydantic-settings** | конфиг из `.env` | CONFIG_FILE |
+| **Groq SDK** | LLM провайдер (Llama 3) | `groq` пакет |
+| **PostgreSQL 16** | основная БД | в Docker compose |
+| **Docker Compose** | локальная инфра | postgres + api сервисы |
+| **Python 3.10+** | runtime | |
 
 ---
 
@@ -48,200 +59,514 @@
 ```text
 backend/
   app/
+    __init__.py
+    main.py (lifespan: MQTT listener, schema init)
     api/
-      deps.py
-      router.py
+      __init__.py
+      router.py (подключение всех роутеров)
+      deps.py (AsyncSession DI)
       routes/
-        assistant.py
-        dashboard.py
-        shelves.py
-        sensors.py
+        __init__.py
+        dashboard.py (GET /dashboard/summary)
+        shelves.py (GET current, logs; PATCH control)
+        sensors.py (POST report)
+        assistant.py (POST chat)
+        realtime.py (WS /ws/shelves/{id}/sensors)
     core/
-      config.py
-      utils.py
+      __init__.py
+      config.py (pydantic Settings с env vars)
+      utils.py (calculate_vpd, другие утилиты)
     db/
-      session.py
+      __init__.py
+      session.py (AsyncSession factory, engine init)
     models/
+      __init__.py
+      base.py (declarative Base)
+      enums.py (ShelfStatus enum)
+      shelf.py (Shelf ORM)
+      device_state.py (DeviceState ORM)
+      sensor_log.py (SensorLog ORM)
     schemas/
-    main.py
+      __init__.py
+      common.py (общие типы)
+      shelf.py (ShelfSummaryRead)
+      device_state.py (DeviceStateRead, DeviceStateControlPatch)
+      sensor.py (SensorLogRead, SensorReportCreate)
+      current.py (ShelfCurrentResponse)
+      dashboard.py (DashboardSummaryResponse)
+      assistant.py (ChatRequest, ChatResponse)
+    services/
+      __init__.py
+      mqtt/
+        __init__.py
+        sensor_listener.py (MQTT async listener с reconnect логикой)
+      sensors/
+        __init__.py
+        ingest.py (persist_sensor_report)
+    realtime/
+      __init__.py
+      hub.py (ConnectionHub для WS broadcast)
   requirements.txt
-  seed.py
+  seed.py (создание seed данных для dev)
   Dockerfile
 ```
 
-Ключевые точки входа:
+### Ключевые точки входа и инициализация
 
-- **`app/main.py`**: создание приложения, подключение роутера, lifespan-инициализация схемы.
-- **`app/api/router.py`**: подключение роутеров `dashboard`, `shelves`, `sensors`, `assistant`.
-- **`app/db/session.py`**: `AsyncSession` на запрос (dependency).
+1. **`app/main.py`**:
+   - `lifespan()`: при старте — создание таблиц, запуск MQTT listener
+   - CORS middleware для web/мобильного клиента
+   - Подключение API роутера
+
+2. **`app/api/router.py`**:
+   - Включает роутеры: dashboard, shelves, sensors, assistant, realtime
+   - Экспортирует `api_router`
+
+3. **`app/db/session.py`**:
+   - `AsyncSessionLocal` фабрика
+   - `engine` с URL из конфига
+   - Используется как dependency в `get_session()`
+
+4. **`app/realtime/hub.py`**:
+   - `ConnectionHub` — singleton для управления WebSocket соединениями
+   - методы: `connect()`, `disconnect()`, `broadcast()`
+   - используется в `realtime.py` и `sensor_listener.py`
 
 ---
 
 ## 4. Конфигурация и окружение
 
-### 4.1. Переменные окружения
+### 4.1. Переменные окружения (`.env`)
 
-Фактически используется `.env` в `backend/` (через `pydantic-settings`).
+Загружаются через `pydantic-settings` в `app/core/config.py`:
 
-- **`DATABASE_URL`**: строка подключения к Postgres (формат `postgresql+asyncpg://...`).
-- **`GROQ_API_KEY`**: ключ доступа для AI ассистента.
-  - Если пустой/не задан — `POST /assistant/chat` возвращает **503**.
-  - Если ключ неверный — возможен **401**.
-- **`GROQ_MODEL_NAME`** (если предусмотрено конфигом): имя модели Groq для chat completion.
+| Переменная | Тип | Назначение | Пример/Примечание |
+|-----------|-----|-----------|------------------|
+| `DATABASE_URL` | str | PostgreSQL async URL | `postgresql+asyncpg://user:pass@localhost/hydroponics` |
+| `GROQ_API_KEY` | str | API ключ LLM провайдера | Если пусто — `/assistant/chat` вернёт 503 |
+| `MQTT_ENABLED` | bool (default: `false`) | Включать ли MQTT listener | Set to `true` for production |
+| `MQTT_HOST` | str | MQTT broker hostname | `193fbce2f2fb461db5e5fea6c8257502.s1.eu.hivemq.cloud` |
+| `MQTT_PORT` | int | MQTT broker port | `8883` (обычно TLS) |
+| `MQTT_USERNAME` | str | MQTT auth username | esp32user |
+| `MQTT_PASSWORD` | str | MQTT auth password | esp32pass |
+| `MQTT_TOPIC` | str | Subscribe topic | `sensors/air_quality` или подобное |
 
 ### 4.2. База данных
 
-- СУБД: PostgreSQL.
-- Инициализация схемы: при старте приложения выполняется `Base.metadata.create_all(...)`.
-  - Это удобно для dev, но **не заменяет миграции**.
+- **СУБД**: PostgreSQL 16 (в docker-compose)
+- **Инициализация** (не-миграционный способ, только для dev):
+  - При `app.main.lifespan` выполняется `Base.metadata.create_all(...)`
+  - + одноразовые `ALTER TABLE` для обратной совместимости
+- **Рекомендация для production**: использовать Alembic для миграций
 
 ---
 
-## 5. Модель данных
+## 5. Модель данных (реализовано)
 
-### 5.1. Сущности
+### 5.1. Сущности (ORM модели)
 
-- **Shelf**: полка/контур управления.
-  - `id`, `name` (уникальный), `status` (`OK`/`WARNING`/`CRITICAL`).
-- **SensorLog**: измерения во времени.
-  - `shelf_id`, `temperature`, `humidity`, `co2`, `tvoc`, `timestamp`.
-- **DeviceState**: состояние исполнительных устройств/уставок для полки.
-  - 1:1 с `Shelf` (PK = `shelf_id`).
-  - `light_brightness`, `fan_speed`, `target_temperature`, `heater_on`, `humidifier_on`, `is_ai_mode`.
+#### Shelf
 
-### 5.2. Связи
+Представляет одну полку/контур управления гидропонной установки.
+
+| Поле | Тип | Constraints | Примечание |
+|------|-----|-----------|-----------|
+| `id` | int | PK | |
+| `name` | str(100) | UNIQUE, NOT NULL | e.g. "Shelf A", "Нижняя полка" |
+| `device_id` | str(100) | UNIQUE, NOT NULL, index | ESP32 ID (MQTT source) |
+| `status` | Enum | NOT NULL, default=OK | OK / WARNING / CRITICAL |
+
+#### SensorLog
+
+Хронологическая запись измерений одного датчика на полке.
+
+| Поле | Тип | Constraints | Примечание |
+|------|-----|-----------|-----------|
+| `id` | int | PK | |
+| `shelf_id` | int | FK(Shelf), NOT NULL | Cascade delete |
+| `temperature` | float | NOT NULL | °C |
+| `humidity` | float | NOT NULL | % |
+| `co2` | int | NOT NULL | ppm |
+| `tvoc` | int | NOT NULL | ppb или условный индекс |
+| `timestamp` | DateTime | NOT NULL, index | UTC, по умолчанию текущее время |
+
+#### DeviceState
+
+Состояние исполнительных устройств и AI режим для полки (1:1 с Shelf).
+
+| Поле | Тип | Constraints | Примечание |
+|------|-----|-----------|-----------|
+| `shelf_id` | int | PK, FK(Shelf), NOT NULL | |
+| `light_brightness` | int | NOT NULL, default=50 | 0..100 % |
+| `fan_speed` | int | NOT NULL, default=50 | 0..100 % (или Low/Med/High на уровне клиента) |
+| `target_temperature` | float | NOT NULL, default=22 | °C, целевой показатель |
+| `heater_on` | bool | NOT NULL, default=false | |
+| `humidifier_on` | bool | NOT NULL, default=false | |
+| `is_ai_mode` | bool | NOT NULL, default=false | Переключатель автопилота |
+
+### 5.2. Диаграмма связей
 
 ```mermaid
 erDiagram
-    SHELF ||--o{ SENSOR_LOG : "has many"
-    SHELF ||--|| DEVICE_STATE : "has one"
+    SHELF ||--o{ SENSOR_LOG : "1:N (cascade delete)"
+    SHELF ||--|| DEVICE_STATE : "1:1 (cascade delete)"
 ```
 
-- **Shelf 1:N SensorLog**: при удалении полки — каскадно удаляются логи.
-- **Shelf 1:1 DeviceState**: при удалении полки — каскадно удаляется состояние устройств.
+- **Shelf → SensorLog**: одна полка может иметь много логов. При удалении Shelf логи удаляются.
+- **Shelf → DeviceState**: одна полка — одно управляемое устройство. При удалении Shelf удаляется и DeviceState.
 
-### 5.3. Доменный инвариант: AI режим (`is_ai_mode`)
+### 5.3. Доменный инвариант: AI режим
 
-`DeviceState.is_ai_mode` задаёт режим управления:
+**Правило**: когда `DeviceState.is_ai_mode == true`, система запрещает ручное изменение параметров управления.
 
-- Если `is_ai_mode == true`, то в эндпоинте управления **запрещено** менять любые поля, кроме самого `is_ai_mode`.
-- Попытка ручного изменения при активном AI режиме должна приводить к **409 Conflict**.
+```
+Если (is_ai_mode == true) И (payload содержит не-is_ai_mode поля):
+  → ошибка 409 Conflict
+  → detail: "Manual control is disabled while AI mode is enabled."
+```
 
-Цель: исключить «случайное ручное вмешательство», пока система в автоматическом режиме.
+**Исключение**: можно всегда менять сам флаг `is_ai_mode`, даже если он уже включён (отключение AI).
 
----
-
-## 6. Бизнес-вычисления
-
-### 6.1. VPD
-
-Для детального среза полки считается **VPD (kPa)** на основе температуры и влажности.
-
-- Используется утилита `calculate_vpd(temperature, humidity)` из `app/core/utils.py`.
-- Если данных нет (нет последнего `SensorLog`) — VPD отсутствует/`null` в ответе.
+**Реализация**: проверка в `routes/shelves.py` → `patch_shelf_control()`
 
 ---
 
-## 7. HTTP API
+## 6. Бизнес-логика и расчёты
+
+### 6.1. VPD (Vapor Pressure Deficit)
+
+**Определение**: Разница между насыщенным и фактическим парциальным давлением водяного пара; критичный параметр для выращивания растений.
+
+**Расчёт**: 
+```python
+def calculate_vpd(temperature: float, humidity: float) -> float:
+    # используется стандартная формула Magnus с коэффициентами
+    # результат в кПа
+    ...
+```
+
+**Использование**:
+- Рассчитывается и возвращается в ответе `GET /shelves/{id}/current` (поле `vpd`)
+- Используется в контексте AI чата (`system_prompt`)
+- Если нет последнего `SensorLog` — VPD не рассчитывается (возвращается `null`)
+
+---
+
+## 7. HTTP API (полный контракт)
 
 ### 7.1. Общие принципы
 
-- Формат: **JSON**.
-- Версионирования вида `/api/v1` сейчас нет (пути — корневые).
-- Ошибки: `HTTPException` с полем `detail` (строка).
+- **Формат**: JSON
+- **Базовый путь**: `/` (нет `/api/v1/`)
+- **CORS**: разрешены localhost:*, http://127.0.0.1:*
+- **Ошибки**: `HTTPException` с `detail: str`
 
-### 7.2. Эндпоинты
+### 7.2. Реализованные эндпоинты (8 шт.)
 
-#### Health
+#### 1. Health Check
+```
+GET /
+Response 200: { "status": "ok", "service": "Smart Hydroponics API" }
+```
+Проверка живости сервиса (ready for orchestrators).
 
-- **`GET /`**: проверка живости сервиса.
+#### 2. Dashboard Summary
+```
+GET /dashboard/summary
+Response 200: DashboardSummaryResponse
+  {
+    "shelves": [
+      {
+        "id": 1,
+        "name": "Shelf A",
+        "status": "OK"
+      },
+      ...
+    ]
+  }
+```
+Краткая сводка по всем полкам для главного дашборда (traffic-light view).
 
-#### Dashboard
+#### 3. Get Shelf Current State
+```
+GET /shelves/{shelf_id}/current
+Response 200: ShelfCurrentResponse
+  {
+    "shelf": {
+      "id": 1,
+      "name": "Shelf A",
+      "status": "OK"
+    },
+    "latest_sensor": {
+      "id": 100,
+      "shelf_id": 1,
+      "temperature": 24.5,
+      "humidity": 65.0,
+      "co2": 450,
+      "tvoc": 120,
+      "timestamp": "2026-04-28T10:30:00Z"
+    },
+    "device_state": {
+      "shelf_id": 1,
+      "light_brightness": 75,
+      "fan_speed": 50,
+      "target_temperature": 22.0,
+      "heater_on": true,
+      "humidifier_on": false,
+      "is_ai_mode": false
+    },
+    "vpd": 1.23
+  }
+Response 404: { "detail": "Shelf {shelf_id} not found." }
+```
+Полный срез состояния полки: текущие показания + управление + рассчитанный VPD.
 
-- **`GET /dashboard/summary`**: краткая сводка по полкам для дашборда (id, name, status).
+#### 4. Get Sensor Logs (History)
+```
+GET /shelves/{shelf_id}/logs?limit=200
+Response 200: [SensorLogRead, ...]
+  [
+    { "id": 1, "shelf_id": 1, "temperature": 23.0, "humidity": 64.5, ... "timestamp": "2026-04-27T10:00:00Z" },
+    ...
+    { "id": 200, "shelf_id": 1, "temperature": 24.5, "humidity": 65.0, ... "timestamp": "2026-04-28T10:30:00Z" }
+  ]
+Response 400: { "detail": "limit must be between 1 and 2000" }
+Response 404: { "detail": "Shelf {shelf_id} not found." }
+```
+История логов датчика (от старых к новым, max 2000).
 
-#### Shelves
-
-- **`GET /shelves/{shelf_id}/current`**: «текущий срез» по полке:
-  - данные полки,
-  - последний лог датчика (если есть),
-  - состояние устройств (если есть),
-  - рассчитанный `vpd` (если есть данные для расчёта).
-
-- **`GET /shelves/{shelf_id}/logs?limit=...`**: список логов датчика.
-  - `limit` ограничен диапазоном (по коду — 1..2000, дефолт 200).
-  - порядок: от старых к новым.
-
-- **`PATCH /shelves/{shelf_id}/control`**: частичное обновление `DeviceState`.
-  - если `is_ai_mode == true`: разрешено менять только `is_ai_mode`, иначе **409**.
-
-#### Sensors
-
-- **`POST /sensors/report`**: приём телеметрии (создаёт `SensorLog`).
-  - если полки не существует: **404**.
-
-#### Assistant (AI Agronomist)
-
-- **`POST /assistant/chat`**: получение ответа AI ассистента с контекстом конкретной полки.
-
+#### 5. Update Device Control (Manual)
+```
+PATCH /shelves/{shelf_id}/control
 Request:
+  {
+    "light_brightness": 80,
+    "fan_speed": 60,
+    "is_ai_mode": false
+  }
+Response 200: DeviceStateRead
+  {
+    "shelf_id": 1,
+    "light_brightness": 80,
+    "fan_speed": 60,
+    "target_temperature": 22.0,
+    "heater_on": true,
+    "humidifier_on": false,
+    "is_ai_mode": false
+  }
+Response 409: { "detail": "Manual control is disabled while AI mode is enabled." }
+Response 404: { "detail": "Shelf {shelf_id} not found." }
+```
+Частичное обновление управления (все поля опциональны). **Бизнес-правило**: если `is_ai_mode=true`, нельзя менять остальное (409).
 
+#### 6. Report Sensor Data (MQTT Legacy)
+```
+POST /sensors/report
+Request:
+  {
+    "shelf_id": 1,
+    "temperature": 24.5,
+    "humidity": 65.0,
+    "co2": 450,
+    "tvoc": 120,
+    "timestamp": "2026-04-28T10:30:00Z"  // optional
+  }
+Response 201: SensorLogRead
+  { "id": 101, "shelf_id": 1, "temperature": 24.5, ... "timestamp": "2026-04-28T10:30:00Z" }
+Response 404: { "detail": "No shelf found for shelf_id..." }
+```
+**Замечание**: основной способ инgest — MQTT listener (асинхронный фоновый процесс). Этот эндпоинт оставлен для ручного тестирования.
+
+#### 7. AI Assistant Chat
+```
+POST /assistant/chat
+Request:
+  {
+    "shelf_id": 1,
+    "message": "Что делать при высоком VPD?"
+  }
+Response 200: ChatResponse
+  {
+    "reply": "При высоком VPD (>1.5 kPa) рекомендуется... [full response от Groq]"
+  }
+Response 401: { "detail": "Invalid or missing GROQ_API_KEY..." }
+Response 404: { "detail": "Shelf {shelf_id} not found." }
+Response 503: { "detail": "GROQ_API_KEY is not configured." }
+```
+Контекстный AI чат. System prompt заполняется последней телеметрией полки и состоянием устройств.
+
+#### 8. WebSocket: Live Sensor Stream
+```
+WS /ws/shelves/{shelf_id}/sensors
+
+Connection workflow:
+  1. client connects → hub.connect(shelf_id, ws)
+  2. client keeps connection open (keepalive)
+  3. server pushes SensorLog as JSON when MQTT sends data
+  4. client disconnects → hub.disconnect(shelf_id, ws)
+
+Message format (server → client):
+  {
+    "type": "sensor_log",
+    "data": { "id": 101, "shelf_id": 1, "temperature": 24.5, ... }
+  }
+
+Response 404 (on connect): WebSocketDisconnect (если shelf не существует)
+```
+**Real-time**: при получении нового логов через MQTT, все подписчики получают JSON на WebSocket.
+
+---
+
+## 7.3. MQTT Listener (Background Service)
+
+**Фоновый процесс** (запускается в `lifespan` → `start_mqtt_listener`):
+
+- **Хост/Порт**: из `MQTT_HOST`, `MQTT_PORT` (конфиг)
+- **Auth**: `MQTT_USERNAME`, `MQTT_PASSWORD`
+- **Topic**: `MQTT_TOPIC` (e.g. `sensors/air_quality`)
+- **TLS**: да (системные CA сертификаты)
+
+**Ожидаемый формат сообщения** (JSON):
 ```json
-{ "shelf_id": 1, "message": "Что делать при высоком VPD?" }
+{
+  "deviceId": "esp32-001",
+  "temperature": 24.5,
+  "humidity": 65.3,
+  "co2": 450,
+  "tvoc": 120,
+  "timestamp": "2026-04-28T10:30:00Z"
+}
 ```
 
-Response:
+**Логика**:
+1. Получить сообщение → распарсить JSON
+2. Найти Shelf по `deviceId` (`Shelf.device_id`)
+3. Создать `SensorLog` с данными
+4. **Broadcast**: отправить log всем подписчикам `WS /ws/shelves/{shelf_id}/sensors`
 
-```json
-{ "reply": "..." }
+**Надёжность**:
+- Auto-reconnect с экспоненциальным backoff (5s → 10s → 20s ... max 300s)
+- Logging всех ошибок и статусов подключения
+
+---
+
+## 8. Локальный запуск и тестирование
+
+### 8.1. Только PostgreSQL в Docker, API локально (dev mode)
+
+```bash
+# Из корня проекта
+docker compose up -d postgres
+
+# В backend/ — активировать venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Запустить API
+cd backend
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Ключевые особенности:
+OpenAPI docs: http://localhost:8000/docs
 
-- Если `GROQ_API_KEY` не настроен: **503** (`detail`: `"GROQ_API_KEY is not configured."`).
-- Если `shelf_id` не существует: **404**.
-- Ошибки провайдера:
-  - **401**: неверный/неавторизованный ключ Groq (сообщение подсказывает, где взять ключ).
-  - **429**: rate limit.
-  - **502**: upstream/client error или пустой ответ от модели.
+### 8.2. Всё в Docker (включая API и MQTT listener)
 
----
+```bash
+# Из корня проекта
+docker compose up -d --build
+```
 
-## 8. Локальный запуск
+Services:
+- `postgres`: 5432
+- `api`: 8000
 
-### 8.1. Только PostgreSQL в Docker, API локально
+### 8.3. Seed Data (для тестирования)
 
-- Поднять БД: `docker compose up -d postgres` (из корня монорепозитория).
-- Запустить API локально: активировать venv и выполнить `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` из каталога `backend/`.
+```bash
+cd backend
+python seed.py
+```
 
-### 8.2. Всё в Docker
-
-- `docker compose up -d --build` (из корня монорепозитория).
-
-### 8.3. Сиды (dev)
-
-- `python seed.py` (из `backend/`) создаёт таблицы/полки/начальные состояния и синтетические логи за несколько дней (для дашборда/графиков).
-
----
-
-## 9. Нефункциональные требования (целевые)
-
-- **Надёжность**: корректная обработка ошибок БД/провайдера AI, отсутствие утечек соединений.
-- **Производительность**: чтение логов ограничено `limit`; при росте данных нужны индексы и/или партиционирование.
-- **Безопасность**: на текущем этапе отсутствует auth; для production необходимо закрыть endpoints управления и ingest.
-- **Наблюдаемость**: рекомендуется добавить структурированные логи и метрики.
+Создаёт:
+- 3 полки с именами A/B/C
+- DeviceState для каждой полки
+- Синтетические SensorLog за 7 дней (для графиков в analytics)
 
 ---
 
-## 10. Roadmap (рекомендованные улучшения)
+## 9. Интеграция с мобильным клиентом (Flutter)
 
-- **Миграции Alembic** вместо `create_all` при старте.
-- **Auth**:
-  - API key для устройств на `POST /sensors/report`,
-  - user auth для мобильного клиента и `PATCH /control`.
-- **Real-time** (MQTT/WebSocket) для live-дашборда без опроса.
-- **Масштабирование логов**:
-  - индексы `(shelf_id, timestamp)`,
-  - партиционирование по времени,
-  - политика хранения (TTL/агрегации).
-- **CI/CD**: сборка образов, проверки, деплой.
+Frontend ожидает:
+
+- **Base URL**: `http://{backend-host}:8000` (настраивается в `ApiService`)
+- **API контракты**: см. выше (endpoints 1–7)
+- **WebSocket**: поддерживает `WS /ws/shelves/{id}/sensors`
+
+---
+
+## 10. Нефункциональные требования
+
+- **Надёжность**: MQTT listener восстанавливается при разрывах соединения; Groq API ошибки обработаны (401, 429, 503).
+- **Производительность**: логи ограничены `limit` для избежания OOM; рекомендуется индекс `(shelf_id, timestamp desc)`.
+- **Безопасность**: **НЕТУ AUTH** — для production добавить API key validation и user auth.
+- **Масштабируемость**: PostgreSQL коннекшены pooled (asyncpg); WebSocket broadcast optimized для малого числа полок.
+
+---
+
+## 11. Roadmap и TODOs
+
+### Высокий приоритет (в production)
+
+- [ ] **Миграции БД (Alembic)**
+  - `create_all` заменить на Alembic миграции
+  - скрипт инициализации для чистой БД
+  
+- [ ] **Аутентификация**
+  - API Key для ESP32 на `POST /sensors/report` (валидация в middleware)
+  - User auth для мобильного клиента (JWT или session)
+  - Rate limit по API key
+  
+- [ ] **Валидация входных данных**
+  - Проверка диапазонов (temperature, humidity, co2 разумные диапазоны)
+  - Защита от injection
+  
+- [ ] **Обработка ошибок**
+  - Graceful shutdown MQTT listener при `docker stop`
+  - Логирование ошибок в структурированном формате (JSON)
+
+### Средний приоритет (улучшение UX)
+
+- [ ] **API документация**
+  - OpenAPI schema уже есть (`/docs`), но нужны примеры ответов для каждого статуса
+  - Описать коды ошибок в OpenAPI аннотациях
+  
+- [ ] **Расширение аналитики**
+  - Агрегированные срезы (hourly, daily averages)
+  - Трендовые эндпоинты
+  
+- [ ] **Оптимизация производительности**
+  - Индексы на `(shelf_id, timestamp DESC)` для быстрого fetch последнего лога
+  - Кеширование summary (Redis или in-memory)
+
+### Низкий приоритет (nice-to-have)
+
+- [ ] **Push уведомления** (критичные состояния → мобильное приложение)
+- [ ] **Интеграция с IoT платформами** (Azure IoT Hub, AWS IoT Core)
+- [ ] **Экспорт данных** (CSV, Parquet для анализа)
+- [ ] **Телеметрия сервиса** (Prometheus метрики, Jaeger traces)
+
+---
+
+## Глоссарий
+
+| Термин | Определение |
+|--------|-----------|
+| **VPD** | Vapor Pressure Deficit — разница между насыщенным и фактическим давлением водяного пара; критичный параметр для растений |
+| **Shelf** | Одна полка/контур управления в гидропонной системе |
+| **DeviceState** | Состояние управления (свет, вентилятор, уставки) для одной полки |
+| **SensorLog** | Одно измерение датчика в момент времени |
+| **MQTT** | Message Queuing Telemetry Transport — протокол для IoT устройств |
+| **ESP32** | Микроконтроллер с WiFi/MQTT способностью |
+| **AI Mode** | Режим автопилота когда система сама управляет полкой (блокирует ручное управление) |
+| **Groq** | LLM провайдер с fast inference (используется для AI ассистента-агронома) |
+

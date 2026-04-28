@@ -33,7 +33,7 @@ async def lifespan(_: FastAPI):
             text(
                 """
                 ALTER TABLE shelves
-                ADD COLUMN IF NOT EXISTS device_id VARCHAR(100) NOT NULL UNIQUE DEFAULT 'unknown'
+                ADD COLUMN IF NOT EXISTS device_id VARCHAR(100)
                 """
             )
         )
